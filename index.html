@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e0f11">
+<title>Morning Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0f11;
+    --card: #17191c;
+    --border: #262a2f;
+    --text: #ececec;
+    --muted: #8b9199;
+    --accent: #7fd69a;
+    --radius: 22px;
+    --gap: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { background: var(--bg); color: var(--text); }
+  body {
+    font-family: "Comic Sans MS", "Comic Sans", "Comic Neue", cursive, sans-serif;
+    min-height: 100dvh;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto 1fr auto;
+    gap: var(--gap);
+    min-height: calc(100dvh - 32px);
+    max-width: 520px;
+    margin: 0 auto;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+  }
+  .label {
+    font-size: 12px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  /* Clock */
+  .clock { grid-column: 1 / -1; text-align: center; padding: 22px 18px; }
+  #time { font-size: clamp(54px, 18vw, 84px); font-weight: 700; line-height: 1; color: var(--accent); }
+  #ampm { font-size: .3em; margin-left: 6px; color: var(--muted); }
+  #date { margin-top: 10px; color: var(--muted); font-size: 16px; }
+
+  /* Weather */
+  .weather { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .w-main { display: flex; align-items: center; gap: 14px; }
+  #w-icon { font-size: 46px; line-height: 1; }
+  #w-temp { font-size: 38px; font-weight: 700; line-height: 1; }
+  #w-desc { color: var(--muted); font-size: 15px; margin-top: 4px; }
+  .w-side { text-align: right; font-size: 15px; color: var(--muted); }
+  .w-side b { color: var(--text); }
+  #w-place { font-size: 12px; margin-top: 4px; }
+
+  /* Tasks */
+  .tasks { grid-column: 1 / -1; display: flex; flex-direction: column; }
+  .task {
+    display: flex; align-items: center; gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--border);
+  }
+  .task:last-child { border-bottom: 0; }
+  .task input[type="checkbox"] {
+    appearance: none; -webkit-appearance: none;
+    flex: 0 0 28px; width: 28px; height: 28px;
+    border: 2px solid var(--muted);
+    border-radius: 9px;
+    background: transparent;
+    cursor: pointer;
+    display: grid; place-content: center;
+  }
+  .task input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+  .task input[type="checkbox"]:checked::after { content: "✓"; color: #0e0f11; font-weight: 700; font-size: 18px; }
+  .task input[type="text"] {
+    flex: 1; min-width: 0;
+    background: transparent; border: 0; outline: 0;
+    color: var(--text);
+    font: inherit; font-size: 17px;
+    padding: 12px 0;
+  }
+  .task input[type="text"]::placeholder { color: #50555c; }
+  .task.done input[type="text"] { color: var(--muted); text-decoration: line-through; }
+
+  /* Quote */
+  .quote { grid-column: 1 / -1; }
+  #quote-text { font-size: 17px; line-height: 1.45; }
+  #quote-author { margin-top: 8px; color: var(--accent); font-size: 14px; }
+</style>
+</head>
+<body>
+<main class="grid">
+
+  <section class="card clock">
+    <div id="time">--:--<span id="ampm"></span></div>
+    <div id="date"></div>
+  </section>
+
+  <section class="card weather">
+    <div class="w-main">
+      <div id="w-icon">…</div>
+      <div>
+        <div id="w-temp">--°</div>
+        <div id="w-desc">Loading weather</div>
+      </div>
+    </div>
+    <div class="w-side">
+      <div>H <b id="w-hi">--°</b> · L <b id="w-lo">--°</b></div>
+      <div id="w-place"></div>
+    </div>
+  </section>
+
+  <section class="card tasks">
+    <div class="label">Top 3 today</div>
+    <div id="task-list"></div>
+  </section>
+
+  <section class="card quote">
+    <div class="label">Quote of the day</div>
+    <div id="quote-text"></div>
+    <div id="quote-author"></div>
+  </section>
+
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- storage helpers (safe if storage is blocked) ---------- */
+  function load(key, fallback) {
+    try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+    catch (e) { return fallback; }
+  }
+  function save(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+  }
+  function todayKey() {
+    var d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
+  /* ---------- clock ---------- */
+  var timeEl = document.getElementById("time");
+  var dateEl = document.getElementById("date");
+  function tick() {
+    var now = new Date();
+    var h = now.getHours(), m = String(now.getMinutes()).padStart(2, "0");
+    var ampm = h >= 12 ? "pm" : "am";
+    h = h % 12 || 12;
+    timeEl.innerHTML = h + ":" + m + '<span id="ampm">' + ampm + "</span>";
+    dateEl.textContent = now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  /* ---------- tasks ---------- */
+  var listEl = document.getElementById("task-list");
+  var tasks = load("tasks", null);
+  var taskDate = load("taskDate", null);
+  var today = todayKey();
+
+  if (!Array.isArray(tasks) || tasks.length !== 3) {
+    tasks = [{ text: "", done: false }, { text: "", done: false }, { text: "", done: false }];
+  }
+  // New day: clear completed tasks, carry over unfinished ones
+  if (taskDate !== today) {
+    tasks = tasks.map(function (t) { return t.done ? { text: "", done: false } : t; });
+    save("tasks", tasks);
+    save("taskDate", today);
+  }
+
+  function renderTasks() {
+    listEl.innerHTML = "";
+    tasks.forEach(function (t, i) {
+      var row = document.createElement("div");
+      row.className = "task" + (t.done ? " done" : "");
+
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = t.done;
+      cb.setAttribute("aria-label", "Task " + (i + 1) + " done");
+      cb.addEventListener("change", function () {
+        tasks[i].done = cb.checked;
+        row.classList.toggle("done", cb.checked);
+        save("tasks", tasks);
+      });
+
+      var input = document.createElement("input");
+      input.type = "text";
+      input.value = t.text;
+      input.placeholder = "Task " + (i + 1);
+      input.maxLength = 80;
+      input.setAttribute("aria-label", "Task " + (i + 1));
+      input.addEventListener("input", function () {
+        tasks[i].text = input.value;
+        save("tasks", tasks);
+      });
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") input.blur();
+      });
+
+      row.appendChild(cb);
+      row.appendChild(input);
+      listEl.appendChild(row);
+    });
+  }
+  renderTasks();
+
+  /* ---------- quotes (one per day, chosen by date) ---------- */
+  var QUOTES = [
+    ["Well begun is half done.", "Aristotle"],
+    ["The journey of a thousand miles begins with a single step.", "Lao Tzu"],
+    ["It does not matter how slowly you go as long as you do not stop.", "Confucius"],
+    ["We suffer more often in imagination than in reality.", "Seneca"],
+    ["You have power over your mind, not outside events.", "Marcus Aurelius"],
+    ["What we do every day matters more than what we do once in a while.", ""],
+    ["Fall seven times, stand up eight.", "Japanese proverb"],
+    ["The best time to plant a tree was twenty years ago. The second best time is now.", "Proverb"],
+    ["Do the next right thing.", ""],
+    ["Small steps still move you forward.", ""],
+    ["Done is better than perfect.", ""],
+    ["Start where you are. Use what you have. Do what you can.", "Arthur Ashe"],
+    ["Whether you think you can or you think you can't, you're right.", "Henry Ford"],
+    ["Courage is not the absence of fear, but acting in spite of it.", ""],
+    ["Energy flows where attention goes.", ""],
+    ["Discipline is choosing what you want most over what you want now.", ""],
+    ["No one is you, and that is your power.", ""],
+    ["Make today count.", ""],
+    ["Hard choices, easy life. Easy choices, hard life.", ""],
+    ["The obstacle is the way.", "Marcus Aurelius"],
+    ["Waste no more time arguing what a good person should be. Be one.", "Marcus Aurelius"],
+    ["Luck is what happens when preparation meets opportunity.", "Seneca"],
+    ["He who has a why to live can bear almost any how.", "Nietzsche"],
+    ["A smooth sea never made a skilled sailor.", "Proverb"],
+    ["Slow progress is still progress.", ""],
+    ["You don't have to be great to start, but you have to start to be great.", ""],
+    ["Focus on the step in front of you, not the whole staircase.", ""],
+    ["Be the energy you want to attract.", ""],
+    ["Today is a good day to get one thing done well.", ""],
+    ["Consistency beats intensity.", ""],
+    ["Progress, not perfection.", ""],
+    ["Do it tired. Do it scared. Do it anyway.", ""],
+    ["Your future self is watching. Make them proud.", ""],
+    ["Doubt kills more dreams than failure ever will.", ""],
+    ["The secret of getting ahead is getting started.", "Mark Twain"],
+    ["Where there is a will, there is a way.", "Proverb"],
+    ["Every morning is a fresh page.", ""],
+    ["Win the morning, win the day.", ""],
+    ["Action is the foundation of all success.", "Pablo Picasso"],
+    ["Don't watch the clock; do what it does. Keep going.", "Sam Levenson"],
+    ["Be stubborn about your goals and flexible about your methods.", ""],
+    ["The harder you work for something, the greater you'll feel when you achieve it.", ""],
+    ["Little by little, a little becomes a lot.", "Tanzanian proverb"],
+    ["Turn your wounds into wisdom.", "Oprah Winfrey"],
+    ["Dream big. Start small. Act now.", ""],
+    ["Stay hungry. Stay humble. Keep building.", ""],
+    ["What you do today can improve all your tomorrows.", "Ralph Marston"],
+    ["Quality is not an act, it is a habit.", "Will Durant"],
+    ["Be patient with yourself. Nothing in nature blooms all year.", ""],
+    ["Get it done, then get it better.", ""],
+    ["Back yourself.", ""]
+  ];
+  var dayNumber = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(2026, 0, 1).getTime()) / 86400000);
+  var q = QUOTES[((dayNumber % QUOTES.length) + QUOTES.length) % QUOTES.length];
+  document.getElementById("quote-text").textContent = "\u201C" + q[0] + "\u201D";
+  document.getElementById("quote-author").textContent = q[1] ? "\u2014 " + q[1] : "";
+
+  /* ---------- weather (Open-Meteo, free, no key) ---------- */
+  var SYDNEY = { lat: -33.8688, lon: 151.2093, label: "Sydney" };
+  var WMO = {
+    0: ["Clear sky", "☀️"], 1: ["Mostly clear", "🌤️"], 2: ["Partly cloudy", "⛅"], 3: ["Overcast", "☁️"],
+    45: ["Fog", "🌫️"], 48: ["Fog", "🌫️"],
+    51: ["Light drizzle", "🌦️"], 53: ["Drizzle", "🌦️"], 55: ["Heavy drizzle", "🌧️"],
+    61: ["Light rain", "🌦️"], 63: ["Rain", "🌧️"], 65: ["Heavy rain", "🌧️"],
+    71: ["Light snow", "🌨️"], 73: ["Snow", "🌨️"], 75: ["Heavy snow", "❄️"],
+    80: ["Showers", "🌦️"], 81: ["Showers", "🌧️"], 82: ["Heavy showers", "⛈️"],
+    95: ["Thunderstorm", "⛈️"], 96: ["Thunderstorm", "⛈️"], 99: ["Thunderstorm", "⛈️"]
+  };
+  function setText(id, v) { document.getElementById(id).textContent = v; }
+
+  function showWeather(loc) {
+    var url = "https://api.open-meteo.com/v1/forecast?latitude=" + loc.lat + "&longitude=" + loc.lon +
+      "&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1";
+    fetch(url)
+      .then(function (r) { if (!r.ok) throw new Error("bad response"); return r.json(); })
+      .then(function (d) {
+        var w = WMO[d.current.weather_code] || ["Unknown", "🌡️"];
+        setText("w-icon", w[1]);
+        setText("w-temp", Math.round(d.current.temperature_2m) + "°");
+        setText("w-desc", w[0]);
+        setText("w-hi", Math.round(d.daily.temperature_2m_max[0]) + "°");
+        setText("w-lo", Math.round(d.daily.temperature_2m_min[0]) + "°");
+        setText("w-place", loc.label);
+      })
+      .catch(function () {
+        setText("w-icon", "📡");
+        setText("w-desc", "Weather unavailable");
+      });
+  }
+
+  var savedLoc = load("location", null);
+  if (savedLoc && typeof savedLoc.lat === "number") {
+    showWeather(savedLoc);
+  } else if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      function (pos) {
+        var loc = { lat: +pos.coords.latitude.toFixed(2), lon: +pos.coords.longitude.toFixed(2), label: "Near you" };
+        save("location", loc);
+        showWeather(loc);
+      },
+      function () { showWeather(SYDNEY); },
+      { timeout: 8000, maximumAge: 3600000 }
+    );
+  } else {
+    showWeather(SYDNEY);
+  }
+
+  // Refresh weather every 30 minutes if the page stays open
+  setInterval(function () { showWeather(load("location", SYDNEY)); }, 30 * 60 * 1000);
+})();
+</script>
+</body>
+</html>
